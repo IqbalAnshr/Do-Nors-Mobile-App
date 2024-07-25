@@ -1,20 +1,33 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/dio_client.dart';
+import '../components/custom_show_dialog.dart';
+import '../services/socket_service.dart';
 
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final SocketService socketService = SocketService();
+
+  bool isLoading = false;
 
   Future<void> loginUser(BuildContext context) async {
+    setState(() {
+      isLoading = true;
+    });
+
+    final url = '${dotenv.env['API_URL']}/api/auth/signIn';
+    final dio = Dio();
+
     try {
-      final url = '${dotenv.env['API_URL']}/api/auth/signIn';
-      final response = await DioClient.instance.post(
+      final response = await dio.post(
         url,
         data: {
           'email': emailController.text,
@@ -35,72 +48,46 @@ class LoginPage extends StatelessWidget {
         prefs.setString('accessToken', accessToken);
         prefs.setString('refreshToken', refreshToken);
 
+        await socketService.connect();
+
         // Navigate to dashboard on successful login
         Navigator.pushNamed(context, '/Dashboard');
       }
     } on DioException catch (e) {
+      // Handle Dio errors
       if (e.response?.statusCode == 400 && e.response?.data['errors'] != null) {
-        // Registration failed
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Registration Failed'),
-            content: Text('${e.response?.data['errors'][0]['msg']}'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                },
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
-      } else if (e.response?.statusCode == 500 &&
-          e.response?.data['errors'] != null) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Error'),
-            content: Text('Wrong email or password.'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                },
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
+        print('Dio error: ${e.response?.data['errors'][0]['msg']}');
+        showErrorDialog(context, e.response?.data['errors'][0]['msg'],
+            'assets/svg/error.svg');
+      } else if (e.response?.statusCode == 401) {
+        print('Dio error: ${e.response?.data['message']}');
+        showErrorDialog(
+            context, e.response?.data['message'], 'assets/svg/error.svg');
+      } else if (e.response?.statusCode == 404) {
+        print('Dio error: ${e.response?.data['message']}');
+        showErrorDialog(
+            context, e.response?.data['message'], 'assets/svg/error.svg');
       } else {
+        // Other Dio errors (e.g., network issues, server errors)
         print('Dio error: ${e.message}');
-        if (e.response != null) {
-          print('Response data: ${e.response!.data}');
-        }
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Error'),
-            content: Text('Failed to connect to server.'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                },
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
+        showErrorDialog(context, 'An error occurred, please try again.',
+            'assets/svg/error.svg');
       }
+    } catch (e) {
+      // Handle other unexpected errors
+      print('Login error: $e');
+      showErrorDialog(context, 'An error occurred, please try again.',
+          'assets/svg/error.svg');
+    } finally {
+      setState(() {
+        isLoading =
+            false; // Set isLoading to false after login process completes
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Removed checkTokenAndNavigate(context); from build method
-
     return Scaffold(
       body: Container(
         padding: EdgeInsets.symmetric(horizontal: 20),
@@ -133,7 +120,6 @@ class LoginPage extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 20),
-                // Email Field
                 Container(
                   width: 350,
                   child: TextFormField(
@@ -158,7 +144,6 @@ class LoginPage extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 20),
-                // Password Field
                 Container(
                   width: 350,
                   child: TextFormField(
@@ -184,29 +169,29 @@ class LoginPage extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 30),
-                // Login Button
-                ElevatedButton(
-                  onPressed: () => loginUser(context),
-                  child: Padding(
-                    padding: const EdgeInsets.all(15),
-                    child: Text(
-                      'LOGIN',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
+                isLoading
+                    ? CircularProgressIndicator() // Show loading indicator if isLoading is true
+                    : ElevatedButton(
+                        onPressed: isLoading ? null : () => loginUser(context),
+                        child: Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Text(
+                            'LOGIN',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF2156),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF2156),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
-                ),
                 SizedBox(height: 10),
-                // Forgot Password
                 TextButton(
                   onPressed: () {
                     Navigator.pushNamed(context, '/forgot_password');
@@ -222,7 +207,6 @@ class LoginPage extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 20),
-                // Register Text
                 Text.rich(
                   TextSpan(
                     children: [
@@ -235,8 +219,6 @@ class LoginPage extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-
-                      // Register Button text
                       TextSpan(
                         text: 'Register Now',
                         style: TextStyle(
@@ -250,7 +232,6 @@ class LoginPage extends StatelessWidget {
                             Navigator.pushNamed(context, '/register');
                           },
                       ),
-
                       TextSpan(
                         text: '.',
                         style: TextStyle(

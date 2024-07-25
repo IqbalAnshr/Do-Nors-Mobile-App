@@ -1,5 +1,5 @@
-name: iqbal_app
-description: "A new Flutter project."
+name: do_nors
+description: "Do-Nors Mobile App"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -43,6 +43,13 @@ dependencies:
   flutter_dotenv: ^5.1.0
   http_interceptor: ^2.0.0-beta.8
   dio: ^5.4.3+1
+  provider: ^6.1.2
+  socket_io_client: ^2.0.0
+  timeago: ^3.7.0
+  restart_app: ^1.2.1
+  image_picker: ^1.1.2
+  google_maps_flutter: ^2.5.3
+  video_player: ^2.9.1
 
 dev_dependencies:
   flutter_test:
@@ -78,8 +85,15 @@ flutter:
     - assets/images/pattern_organ.jpg
     - assets/images/profile.jpg
     - assets/svg/icon_drawer.svg
-    - assets/svg/kidney-organ.svg
+    - assets/images/lung-organ.png
+    - assets/images/heart-organ.png
+    - assets/images/intestine-organ.png
+    - assets/images/liver-organ.png
+    - assets/images/pancreas-organ.png
+    - assets/svg/complete.svg
+    - assets/svg/error.svg
     - assets/images/profile.png
+    - assets/videos/Donor_Animated.mp4
     - .env
 
 

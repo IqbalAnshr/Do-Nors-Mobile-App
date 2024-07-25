@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,7 +14,7 @@ class DioInterceptor extends Interceptor {
 
   Dio dio = Dio(
     BaseOptions(
-      baseUrl: '${dotenv.env['BASE_URL']}',
+      baseUrl: '${dotenv.env['API_URL']} ?? http://147.139.169.78',
     ),
   );
 
@@ -69,11 +68,14 @@ class DioInterceptor extends Interceptor {
         }
         return;
       } else {
-        // final prefs = await SharedPreferences.getInstance();
-        // await prefs.remove('accessToken');
-        // await prefs.remove('refreshToken');
-        print("SHIBALLLLL KAGAK BISA REFRESH WHY");
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('accessToken');
+        await prefs.remove('refreshToken');
       }
+    } else if (err.type == DioExceptionType.connectionError) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('accessToken');
+      await prefs.remove('refreshToken');
     }
 
     handler.next(err);

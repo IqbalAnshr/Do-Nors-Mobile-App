@@ -1,5 +1,6 @@
+import 'package:dio/dio.dart';
+import 'package:do_nors/pages/request_detail_donation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../components/carousel_image.dart';
 import '../components/card_donation.dart';
 import '../components/drawer.dart';
@@ -25,31 +26,46 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> fetchData() async {
-    final String? apiUrl = '${dotenv.env['API_URL']}/api/post/request';
+    final String apiUrl = '/api/post/request?page=1&limit=5';
     setState(() {
       isLoading = true;
     });
     try {
-      final response = await DioClient.instance.get(apiUrl!);
+      final response = await DioClient.instance.get(apiUrl);
       if (response.statusCode == 200) {
         final jsonData = response.data;
-        List<DonationRequest> requests = [];
-        for (var item in jsonData['data']) {
-          DonationRequest request = DonationRequest.fromJson(item);
-          requests.add(request);
+        if (jsonData['data'] != null) {
+          List<DonationRequest> requests = [];
+          for (var item in jsonData['data']) {
+            DonationRequest request = DonationRequest.fromJson(item);
+            requests.add(request);
+          }
+          setState(() {
+            donationRequests = requests;
+          });
+        } else {
+          throw Exception('Invalid response data');
         }
-        setState(() {
-          donationRequests = requests;
-        });
       } else {
         throw Exception('Failed to load donation requests');
       }
-    } catch (e) {
+    } on DioException catch (e) {
       print('Error fetching data: $e');
+      if (e.response?.statusCode == 201) {
+        Future.delayed(Duration(seconds: 2), () async {
+          await fetchData();
+        });
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+      }
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -172,17 +188,29 @@ class _DashboardState extends State<Dashboard> {
                       // List of donation requests here
                       ListView.builder(
                         shrinkWrap: true,
+                        physics: NeverScrollableScrollPhysics(),
                         itemCount: donationRequests.length,
                         itemBuilder: (context, index) {
-                          return DonationCard(
-                            name: donationRequests[index].user.name,
-                            location: donationRequests[index].hospital,
-                            timeAgo: _calculateTimeAgo(
-                                donationRequests[index].createdAt),
-                            organImage:
-                                'assets/images/kidney-organ.png', // Gambar organ sementara
-                            organName: donationRequests[index].organType,
-                          );
+                          return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => RequestDetailPage(
+                                      requestId: donationRequests[index].id,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: DonationCard(
+                                name: donationRequests[index].user.name,
+                                location: donationRequests[index].hospital,
+                                timeAgo: _calculateTimeAgo(
+                                    donationRequests[index].createdAt),
+                                organImage:
+                                    'assets/images/${donationRequests[index].organType.toLowerCase()}-organ.png',
+                                organName: donationRequests[index].organType,
+                              ));
                         },
                       ),
                     ],

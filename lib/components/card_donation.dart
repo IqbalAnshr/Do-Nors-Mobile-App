@@ -32,7 +32,7 @@ class DonationCard extends StatelessWidget {
               if (profileImage != null) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
+                  child: Image.network(
                     profileImage!,
                     width: 100,
                     height: 100,
@@ -55,7 +55,7 @@ class DonationCard extends StatelessWidget {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Location: $location',
+                      'Location: ${_shortenLocation(location)}',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 16,
@@ -77,7 +77,8 @@ class DonationCard extends StatelessWidget {
                 children: [
                   Image.asset(
                     organImage,
-                    // Atur lebar gambar sesuai kebutuhan
+                    width: 75,
+                    height: 75,
                     fit: BoxFit.cover,
                   ),
                   SizedBox(height: 8),
@@ -97,4 +98,9 @@ class DonationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _shortenLocation(String location, {int maxLength = 10}) {
+  if (location.length <= maxLength) return location;
+  return '${location.substring(0, maxLength)}...';
 }

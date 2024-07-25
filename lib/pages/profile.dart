@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../components/appbar.dart';
 import '../components/navigation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/dio_client.dart';
 import '../services/authorization_interceptor.dart';
+import '../services/socket_service.dart';
 
 class ProfilePage extends StatefulWidget {
   @override
@@ -13,6 +15,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   late Future<Map<String, dynamic>> _userProfile;
+  final _socketService = SocketService();
 
   @override
   void initState() {
@@ -20,28 +23,47 @@ class _ProfilePageState extends State<ProfilePage> {
     _userProfile = fetchUserProfile();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   Future<void> logout(BuildContext context) async {
-    final url = '/api/auth/signout';
+    final String url = '/api/auth/signout';
 
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    final response = await DioClient.instance
-        .post(url, data: {'token': prefs.getString('accessToken')});
+      // Send a signout request to the server
+      final response = await DioClient.instance.post(
+        url,
+        data: {'token': prefs.getString('refreshToken')},
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to logout');
+      // Check if the signout request was successful
+      if (response.statusCode != 200) {
+        throw Exception('Failed to logout');
+      }
+
+      // Remove tokens from SharedPreferences
+      await prefs.remove('accessToken');
+      await prefs.remove('refreshToken');
+
+      // Disconnect from the WebSocket service
+      await _socketService.disconnect();
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (Route<dynamic> route) => true,
+      );
+    } catch (error) {
+      print('Logout failed: $error');
+      // Handle error, for example by showing a snackbar or dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout failed. Please try again.')),
+      );
     }
-
-    // Hapus token akses dari SharedPreferences
-    prefs.remove('accessToken');
-    prefs.remove('refreshToken');
-
-    // Arahkan pengguna kembali ke halaman login
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/login',
-      (Route<dynamic> route) => false, // Hapus semua rute kecuali halaman login
-    );
   }
 
   Future<Map<String, dynamic>> fetchUserProfile() async {
@@ -61,7 +83,6 @@ class _ProfilePageState extends State<ProfilePage> {
           ...userAddress,
         };
       } else {
-        // Handle specific HTTP status codes
         if (profileResponse.statusCode == 404 ||
             addressResponse.statusCode == 404) {
           throw Exception('User profile not found');
@@ -84,112 +105,142 @@ class _ProfilePageState extends State<ProfilePage> {
       });
     }
 
-    return Scaffold(
-      appBar: CustomAppBar(title: 'Profile'),
-      bottomNavigationBar: FluidNavBar(selectedIndex: 4),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _userProfile,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Failed to load profile'));
-          } else {
-            final profileData = snapshot.data!;
-            final profilePictureUrl = (profileData['user']['picture'] != null &&
-                    profileData['user']['picture'].isNotEmpty &&
-                    Uri.parse(profileData['user']['picture']).isAbsolute)
-                ? '${dotenv.env['API_URL']}/storage/${profileData['user']['picture']}'
-                : "https://plus.unsplash.com/premium_photo-1687284884918-e230d35bb15a?q=80&w=1517&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
-            return SingleChildScrollView(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                ),
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    Center(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushNamed(context, '/Dashboard');
+        return false;
+      },
+      child: Scaffold(
+        appBar: CustomAppBar(title: 'Profile'),
+        bottomNavigationBar: FluidNavBar(selectedIndex: 4),
+        body: FutureBuilder<Map<String, dynamic>>(
+          future: _userProfile,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              Future.delayed(Duration(seconds: 3), () {
+                setState(() {
+                  _userProfile = fetchUserProfile();
+                });
+              });
+              return Center(child: Center(child: CircularProgressIndicator()));
+            } else {
+              final profileData = snapshot.data!;
+              final profilePictureUrl = (profileData['user']
+                              ['profilePicturePath'] !=
+                          null &&
+                      profileData['user']['profilePicturePath'].isNotEmpty &&
+                      Uri.tryParse(
+                                  '${dotenv.env['API_URL']}/profilePictures/${profileData['user']['profilePicturePath']}')
+                              ?.isAbsolute ==
+                          true)
+                  ? '${dotenv.env['API_URL']}/profilePictures/${profileData['user']['profilePicturePath']}'
+                  : "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png";
+              return SingleChildScrollView(
+                physics: AlwaysScrollableScrollPhysics(),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                  ),
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 70,
+                              backgroundImage: NetworkImage(profilePictureUrl),
+                            ),
+                            SizedBox(height: 20),
+                            Text(
+                              profileData['user']['name'] ?? 'N/A',
+                              style: TextStyle(
+                                  fontSize: 24, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              (profileData['address']['city'] ?? 'N/A') +
+                                  ', ' +
+                                  (profileData['address']['province'] ?? 'N/A'),
+                              style:
+                                  TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                            SizedBox(height: 30),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () => Navigator.pushNamed(
+                                      context, '/update_profile'),
+                                  icon: Icon(Icons.edit, size: 20),
+                                  label: Text('Edit Profile',
+                                      style: TextStyle(fontSize: 15)),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 15),
+                                    foregroundColor: Colors.black,
+                                    backgroundColor: Colors.grey[300],
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () {},
+                                  icon: Icon(Icons.share, size: 20),
+                                  label: Text('Share Profile',
+                                      style: TextStyle(fontSize: 15)),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 15),
+                                    foregroundColor: Colors.white,
+                                    backgroundColor: Color(0xFFFF2156),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 30),
+                      Column(
                         children: [
-                          CircleAvatar(
-                            radius: 70,
-                            backgroundImage: NetworkImage(profilePictureUrl),
-                          ),
-                          SizedBox(height: 20),
-                          Text(
-                            profileData['user']['name'] ?? 'N/A',
-                            style: TextStyle(
-                                fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            (profileData['address']['city'] ?? 'N/A') +
-                                ', ' +
-                                (profileData['address']['province'] ?? 'N/A'),
-                            style: TextStyle(fontSize: 18, color: Colors.grey),
-                          ),
-                          SizedBox(height: 30),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: () {},
-                                icon: Icon(Icons.edit, size: 20),
-                                label: Text('Edit Profile',
-                                    style: TextStyle(fontSize: 15)),
-                                style: ElevatedButton.styleFrom(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 15),
-                                  foregroundColor: Colors.black,
-                                  backgroundColor: Colors.grey[300],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                              ElevatedButton.icon(
-                                onPressed: () {},
-                                icon: Icon(Icons.share, size: 20),
-                                label: Text('Share Profile',
-                                    style: TextStyle(fontSize: 15)),
-                                style: ElevatedButton.styleFrom(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 15),
-                                  foregroundColor: Colors.white,
-                                  backgroundColor: Color(0xFFFF2156),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                            ],
+                          ListWidget(
+                              icon: Icons.person,
+                              text: 'Personal Information',
+                              onPressed: () => Navigator.pushNamed(
+                                  context, '/personal_information')),
+                          ListWidget(
+                              icon: Icons.location_on,
+                              text: 'Address',
+                              onPressed: () => Navigator.pushNamed(
+                                  context, '/update_address')),
+                          ListWidget(
+                              icon: Icons.history,
+                              text: 'History',
+                              onPressed: () =>
+                                  Navigator.pushNamed(context, '/history')),
+                          ListWidget(icon: Icons.settings, text: 'Settings'),
+                          ListWidget(
+                            icon: Icons.logout,
+                            text: 'Logout',
+                            onPressed: () => logout(context),
                           ),
                         ],
                       ),
-                    ),
-                    SizedBox(height: 30),
-                    Column(
-                      children: [
-                        ListWidget(
-                            icon: Icons.person, text: 'Personal Information'),
-                        ListWidget(icon: Icons.location_on, text: 'Location'),
-                        ListWidget(icon: Icons.history, text: 'History'),
-                        ListWidget(icon: Icons.settings, text: 'Settings'),
-                        ListWidget(
-                          icon: Icons.logout,
-                          text: 'Logout',
-                          onPressed: () => logout(context),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-        },
+              );
+            }
+          },
+        ),
       ),
     );
   }

@@ -35,11 +35,9 @@ class CustomDrawer extends StatelessWidget {
               ),
             ),
             DrawerNavigationItem(
-              iconData: Icons.message_outlined,
-              title: 'Message',
-              onTap: () {
-                // Action when "Message" drawer item is tapped
-              },
+              iconData: Icons.report_gmailerrorred,
+              title: 'Report Abuse',
+              onTap: () {},
             ),
             DrawerNavigationItem(
               iconData: Icons.bookmark_outline,
